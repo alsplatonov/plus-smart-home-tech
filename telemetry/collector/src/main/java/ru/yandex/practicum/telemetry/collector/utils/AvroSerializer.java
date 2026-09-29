@@ -15,7 +15,6 @@ import java.io.IOException;
 //Kafka-сериализатор: превращает Avro-запись в бинарный формат.
 public class AvroSerializer implements Serializer<SpecificRecordBase> {
     private final EncoderFactory encoderFactory = EncoderFactory.get();
-    private BinaryEncoder encoder;
 
     @Override
     public byte[] serialize(String topic, SpecificRecordBase data) {
@@ -23,7 +22,7 @@ public class AvroSerializer implements Serializer<SpecificRecordBase> {
             return null;
         }
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            encoder = encoderFactory.binaryEncoder(out, encoder);
+            BinaryEncoder encoder = encoderFactory.binaryEncoder(out, null);
             DatumWriter<SpecificRecordBase> writer = new SpecificDatumWriter<>(data.getSchema());
             writer.write(data, encoder);
             encoder.flush();
