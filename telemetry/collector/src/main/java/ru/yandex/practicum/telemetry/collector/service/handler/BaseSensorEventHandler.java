@@ -1,27 +1,37 @@
 package ru.yandex.practicum.telemetry.collector.service.handler;
 
-import ru.yandex.practicum.telemetry.collector.model.SensorEvent;
-import ru.yandex.practicum.telemetry.collector.service.KafkaEventProducer;
-import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
-import lombok.RequiredArgsConstructor;
 import org.apache.avro.specific.SpecificRecordBase;
+import ru.yandex.practicum.grpc.telemetry.event.SensorEventProto;
+import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
+import ru.yandex.practicum.telemetry.collector.service.KafkaEventProducer;
 
-@RequiredArgsConstructor
-public abstract class BaseSensorEventHandler<T extends SensorEvent> implements SensorEventHandler {
+import java.time.Instant;
+
+public abstract class BaseSensorEventHandler implements SensorEventHandler {
+
     private final KafkaEventProducer producer;
 
-    protected abstract SpecificRecordBase toPayload(T event);
+    protected BaseSensorEventHandler(KafkaEventProducer producer) {
+        this.producer = producer;
+    }
+
+    protected abstract SpecificRecordBase mapToAvroPayload(SensorEventProto event);
 
     @Override
-    @SuppressWarnings("unchecked")
-    public void handle(SensorEvent event) {
-        T typed = (T) event;
-        SensorEventAvro avro = SensorEventAvro.newBuilder()
-                .setId(typed.getId())
-                .setHubId(typed.getHubId())
-                .setTimestamp(typed.getTimestamp())
-                .setPayload(toPayload(typed))
+    public void handle(SensorEventProto event) {
+        if (event.getPayloadCase() != getMessageType()) {
+            throw new IllegalArgumentException("Неизвестный тип события датчика: " + event.getPayloadCase());
+        }
+
+        SensorEventAvro payload = SensorEventAvro.newBuilder()
+                .setId(event.getId())
+                .setHubId(event.getHubId())
+                .setTimestamp(Instant.ofEpochSecond(
+                        event.getTimestamp().getSeconds(),
+                        event.getTimestamp().getNanos()))
+                .setPayload(mapToAvroPayload(event))
                 .build();
-        producer.sendSensorEvent(typed.getHubId(), typed.getTimestamp(), avro);
+
+        producer.sendSensorEvent(payload);
     }
 }
