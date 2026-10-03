@@ -1,26 +1,36 @@
 package ru.yandex.practicum.telemetry.collector.service.handler;
 
-import ru.yandex.practicum.telemetry.collector.model.HubEvent;
-import ru.yandex.practicum.telemetry.collector.service.KafkaEventProducer;
-import ru.yandex.practicum.kafka.telemetry.event.HubEventAvro;
-import lombok.RequiredArgsConstructor;
 import org.apache.avro.specific.SpecificRecordBase;
+import ru.yandex.practicum.grpc.telemetry.event.HubEventProto;
+import ru.yandex.practicum.kafka.telemetry.event.HubEventAvro;
+import ru.yandex.practicum.telemetry.collector.service.KafkaEventProducer;
 
-@RequiredArgsConstructor
-public abstract class BaseHubEventHandler<T extends HubEvent> implements HubEventHandler {
+import java.time.Instant;
+
+public abstract class BaseHubEventHandler implements HubEventHandler {
+
     private final KafkaEventProducer producer;
 
-    protected abstract SpecificRecordBase toPayload(T event);
+    protected BaseHubEventHandler(KafkaEventProducer producer) {
+        this.producer = producer;
+    }
+
+    protected abstract SpecificRecordBase mapToAvroPayload(HubEventProto event);
 
     @Override
-    @SuppressWarnings("unchecked")
-    public void handle(HubEvent event) {
-        T typed = (T) event;
-        HubEventAvro avro = HubEventAvro.newBuilder()
-                .setHubId(typed.getHubId())
-                .setTimestamp(typed.getTimestamp())
-                .setPayload(toPayload(typed))
+    public void handle(HubEventProto event) {
+        if (event.getPayloadCase() != getMessageType()) {
+            throw new IllegalArgumentException("Неизвестный тип события хаба: " + event.getPayloadCase());
+        }
+
+        HubEventAvro payload = HubEventAvro.newBuilder()
+                .setHubId(event.getHubId())
+                .setTimestamp(Instant.ofEpochSecond(
+                        event.getTimestamp().getSeconds(),
+                        event.getTimestamp().getNanos()))
+                .setPayload(mapToAvroPayload(event))
                 .build();
-        producer.sendHubEvent(typed.getHubId(), typed.getTimestamp(), avro);
+
+        producer.sendHubEvent(payload);
     }
 }
