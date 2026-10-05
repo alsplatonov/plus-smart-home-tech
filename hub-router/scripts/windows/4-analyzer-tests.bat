@@ -8,7 +8,7 @@ set "JAR_PATH=%~dp0..\hub-router.jar"
 
 if "%1"=="info" (
   echo.
-  java -jar "%JAR_PATH%" info
+  java -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -jar "%JAR_PATH%" info
   echo.
   pause
   exit /b
@@ -17,7 +17,7 @@ if "%1"=="info" (
 echo "Запуск Hub Router (режим: ANALYZE)"
 echo.
 
-java -jar "%JAR_PATH%" ^
+java -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -jar "%JAR_PATH%" ^
   --hub-router.execution.mode=ANALYZE ^
   --hub-router.execution.immediate-logging.enabled=false ^
   --hub-router.execution.output.info-enabled=true ^
