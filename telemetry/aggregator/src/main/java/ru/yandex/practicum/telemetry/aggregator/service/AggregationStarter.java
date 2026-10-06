@@ -53,6 +53,7 @@ public class AggregationStarter {
 
             Runtime.getRuntime().addShutdownHook(new Thread(consumer::wakeup));
 
+            poll:
             while (true) {
                 ConsumerRecords<String, SensorEventAvro> records = consumer.poll(Duration.ofMillis(1000));
 
@@ -78,11 +79,12 @@ public class AggregationStarter {
                         if (e instanceof InterruptedException) {
                             Thread.currentThread().interrupt();
                         }
-                        log.error("Не удалось записать снапшот в Kafka, offset записи {}-{} не будет зафиксирован",
+                        log.error("Не удалось записать снапшот в Kafka, offset записи {}-{} не будет зафиксирован. "
+                                        + "Останавливаем consumer - при следующем запуске обработка продолжится "
+                                        + "с последнего зафиксированного offset",
                                 record.topic(), record.offset(), e);
-                        // не продолжаем обработку остатка батча - оффсет неподтверждённой записи
-                        // и всех последующих в этом цикле poll() не попадёт в currentOffsets
-                        break;
+
+                        break poll;
                     }
                 }
 

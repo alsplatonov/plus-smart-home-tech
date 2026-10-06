@@ -60,6 +60,7 @@ public class SnapshotProcessor {
 
             Runtime.getRuntime().addShutdownHook(new Thread(consumer::wakeup));
 
+            poll:
             while (true) {
                 ConsumerRecords<String, SensorsSnapshotAvro> records = consumer.poll(Duration.ofMillis(1000));
 
@@ -70,11 +71,12 @@ public class SnapshotProcessor {
                                 new TopicPartition(record.topic(), record.partition()),
                                 new OffsetAndMetadata(record.offset() + 1));
                     } catch (Exception e) {
-                        log.error("Ошибка обработки снэпшота хаба {}, offset записи {}-{} не будет зафиксирован",
+                        log.error("Ошибка обработки снэпшота хаба {}, offset записи {}-{} не будет зафиксирован. "
+                                        + "Останавливаем consumer - при следующем запуске обработка продолжится "
+                                        + "с последнего зафиксированного offset",
                                 record.value().getHubId(), record.topic(), record.offset(), e);
-                        // не продолжаем обработку остатка батча - оффсет непод­тверждённой записи
-                        // и всех последующих в этом цикле poll() не попадёт в currentOffsets
-                        break;
+
+                        break poll;
                     }
                 }
 
