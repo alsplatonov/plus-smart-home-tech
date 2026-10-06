@@ -19,13 +19,15 @@ import java.util.Properties;
 @Configuration
 public class KafkaClientsConfig {
 
-    @Bean
+    @Bean(destroyMethod = "")
     public KafkaConsumer<String, SensorEventAvro> sensorEventConsumer(KafkaConfig kafkaConfig) {
         Properties properties = new Properties();
         properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaConfig.getBootstrapServers());
         properties.put(ConsumerConfig.GROUP_ID_CONFIG, kafkaConfig.getConsumerGroupId());
         properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, SensorEventDeserializer.class);
+        // offset фиксируется вручную в AggregationStarter только после успешной обработки события
+        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         return new KafkaConsumer<>(properties);
     }
 

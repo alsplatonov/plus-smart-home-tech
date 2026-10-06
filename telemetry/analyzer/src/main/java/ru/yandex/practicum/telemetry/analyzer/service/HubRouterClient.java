@@ -49,6 +49,19 @@ public class HubRouterClient {
         } catch (Exception e) {
             log.error("Не удалось отправить действие {} по датчику {} (сценарий '{}', хаб {})",
                     action.getType(), sensorId, scenarioName, hubId, e);
+            // отправка action - часть успешной обработки snapshot, поэтому пробрасываем исключение
+            // дальше в SnapshotProcessor, чтобы offset снапшота не был зафиксирован
+            throw new HubRouterException("Не удалось отправить действие " + action.getType()
+                    + " по датчику " + sensorId + " хаба " + hubId, e);
+        }
+    }
+
+    /**
+     * Исключение, сигнализирующее о неудачной попытке выполнить действие в Hub Router.
+     */
+    public static class HubRouterException extends RuntimeException {
+        public HubRouterException(String message, Throwable cause) {
+            super(message, cause);
         }
     }
 }

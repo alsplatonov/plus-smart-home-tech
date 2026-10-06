@@ -6,8 +6,10 @@ import org.apache.avro.specific.SpecificRecordBase;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
@@ -20,6 +22,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Класс AggregationStarter, ответственный за запуск агрегации данных.
@@ -34,6 +37,10 @@ public class AggregationStarter {
     private final KafkaConfig kafkaConfig;
 
     private final Map<String, SensorsSnapshotAvro> snapshots = new HashMap<>();
+
+    // оффсеты успешно обработанных записей - коммитим только их,
+    // чтобы не подтвердить сообщение, snapshot которого не удалось записать в Kafka
+    private final Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
 
     /**
      * Метод для начала процесса агрегации данных.
@@ -50,24 +57,41 @@ public class AggregationStarter {
                 ConsumerRecords<String, SensorEventAvro> records = consumer.poll(Duration.ofMillis(1000));
 
                 for (ConsumerRecord<String, SensorEventAvro> record : records) {
-                    SensorEventAvro event = record.value();
-                    log.debug("Получено событие датчика: {}", event);
+                    try {
+                        SensorEventAvro event = record.value();
+                        log.debug("Получено событие датчика: {}", event);
 
-                    updateState(event).ifPresent(snapshot -> {
-                        ProducerRecord<String, SpecificRecordBase> producerRecord = new ProducerRecord<>(
-                                kafkaConfig.getTopics().getSnapshots(), snapshot.getHubId(), snapshot);
-                        producer.send(producerRecord, (metadata, exception) -> {
-                            if (exception != null) {
-                                log.error("Не удалось отправить снапшот хаба {} в топик {}: {}",
-                                        snapshot.getHubId(), kafkaConfig.getTopics().getSnapshots(),
-                                        exception.getMessage(), exception);
-                            }
-                        });
-                    });
+                        Optional<SensorsSnapshotAvro> snapshotOpt = updateState(event);
+                        if (snapshotOpt.isPresent()) {
+                            SensorsSnapshotAvro snapshot = snapshotOpt.get();
+                            ProducerRecord<String, SpecificRecordBase> producerRecord = new ProducerRecord<>(
+                                    kafkaConfig.getTopics().getSnapshots(), snapshot.getHubId(), snapshot);
+                            // ждём подтверждения записи в Kafka синхронно - иначе offset исходного
+                            // sensor-event может быть зафиксирован раньше, чем snapshot реально доехал
+                            producer.send(producerRecord).get();
+                        }
+
+                        currentOffsets.put(
+                                new TopicPartition(record.topic(), record.partition()),
+                                new OffsetAndMetadata(record.offset() + 1));
+                    } catch (ExecutionException | InterruptedException e) {
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                        log.error("Не удалось записать снапшот в Kafka, offset записи {}-{} не будет зафиксирован",
+                                record.topic(), record.offset(), e);
+                        // не продолжаем обработку остатка батча - оффсет неподтверждённой записи
+                        // и всех последующих в этом цикле poll() не попадёт в currentOffsets
+                        break;
+                    }
                 }
 
-                if (!records.isEmpty()) {
-                    consumer.commitAsync();
+                if (!currentOffsets.isEmpty()) {
+                    consumer.commitAsync(currentOffsets, (offsets, exception) -> {
+                        if (exception != null) {
+                            log.error("Не удалось асинхронно зафиксировать оффсеты {}", offsets, exception);
+                        }
+                    });
                 }
             }
 
@@ -79,10 +103,12 @@ public class AggregationStarter {
 
             try {
                 // Перед тем, как закрыть продюсер и консьюмер, нужно убедиться,
-                // что все сообщения, лежащие в буффере, отправлены и
-                // все оффсеты обработанных сообщений зафиксированы
+                // что все сообщения, лежащие в буффере, отправлены, и
+                // зафиксировать оффсеты только успешно обработанных сообщений
                 producer.flush();
-                consumer.commitSync();
+                if (!currentOffsets.isEmpty()) {
+                    consumer.commitSync(currentOffsets);
+                }
             } finally {
                 log.info("Закрываем консьюмер");
                 consumer.close();

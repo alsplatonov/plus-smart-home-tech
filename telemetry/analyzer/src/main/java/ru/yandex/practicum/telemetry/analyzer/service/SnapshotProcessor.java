@@ -6,6 +6,8 @@ import org.apache.avro.specific.SpecificRecordBase;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.kafka.telemetry.event.SensorStateAvro;
@@ -24,6 +26,7 @@ import ru.yandex.practicum.telemetry.analyzer.repository.ScenarioConditionReposi
 import ru.yandex.practicum.telemetry.analyzer.repository.ScenarioRepository;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +50,10 @@ public class SnapshotProcessor {
     private final ActionRepository actionRepository;
     private final HubRouterClient hubRouterClient;
 
+    // оффсеты успешно обработанных снэпшотов - коммитим только их, чтобы не подтвердить
+    // снэпшот, действие по которому не удалось отправить в Hub Router
+    private final Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
+
     public void start() {
         try {
             consumer.subscribe(List.of(kafkaConfig.getTopics().getSnapshots()));
@@ -59,13 +66,24 @@ public class SnapshotProcessor {
                 for (ConsumerRecord<String, SensorsSnapshotAvro> record : records) {
                     try {
                         handleSnapshot(record.value());
+                        currentOffsets.put(
+                                new TopicPartition(record.topic(), record.partition()),
+                                new OffsetAndMetadata(record.offset() + 1));
                     } catch (Exception e) {
-                        log.error("Ошибка обработки снэпшота хаба {}", record.value().getHubId(), e);
+                        log.error("Ошибка обработки снэпшота хаба {}, offset записи {}-{} не будет зафиксирован",
+                                record.value().getHubId(), record.topic(), record.offset(), e);
+                        // не продолжаем обработку остатка батча - оффсет непод­тверждённой записи
+                        // и всех последующих в этом цикле poll() не попадёт в currentOffsets
+                        break;
                     }
                 }
 
-                if (!records.isEmpty()) {
-                    consumer.commitAsync();
+                if (!currentOffsets.isEmpty()) {
+                    consumer.commitAsync(currentOffsets, (offsets, exception) -> {
+                        if (exception != null) {
+                            log.error("Не удалось асинхронно зафиксировать оффсеты {}", offsets, exception);
+                        }
+                    });
                 }
             }
         } catch (WakeupException ignored) {
@@ -74,7 +92,9 @@ public class SnapshotProcessor {
             log.error("Ошибка во время обработки снэпшотов", e);
         } finally {
             try {
-                consumer.commitSync();
+                if (!currentOffsets.isEmpty()) {
+                    consumer.commitSync(currentOffsets);
+                }
             } finally {
                 log.info("Закрываем консьюмер снэпшотов");
                 consumer.close();
