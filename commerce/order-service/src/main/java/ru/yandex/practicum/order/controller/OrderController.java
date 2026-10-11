@@ -30,6 +30,11 @@ public class OrderController {
         return orderService.createOrder(request);
     }
 
+    @GetMapping
+    public List<OrderDto> getAllOrders() {
+        return orderService.getAllOrders();
+    }
+
     @GetMapping("/{id}")
     public OrderDto getOrderById(@PathVariable Long id) {
         return orderService.getOrderById(id);

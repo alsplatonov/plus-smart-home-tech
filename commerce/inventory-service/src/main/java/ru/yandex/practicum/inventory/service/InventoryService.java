@@ -13,6 +13,8 @@ import ru.yandex.practicum.inventory.exception.NotFoundException;
 import ru.yandex.practicum.inventory.mapper.InventoryMapper;
 import ru.yandex.practicum.inventory.repository.InventoryRepository;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class InventoryService {
@@ -22,13 +24,15 @@ public class InventoryService {
 
     @Transactional
     public InventoryDto createInventory(UpdateInventoryRequest request) {
-        InventoryItem item = inventoryRepository.findByProductId(request.productId())
-                .orElseGet(() -> InventoryItem.builder()
-                        .productId(request.productId())
-                        .quantity(0)
-                        .reservedQuantity(0)
-                        .build());
-        item.setQuantity(request.quantity());
+        if (inventoryRepository.findByProductId(request.productId()).isPresent()) {
+            throw new IllegalArgumentException(
+                    "Складская запись для productId=" + request.productId() + " уже существует");
+        }
+        InventoryItem item = InventoryItem.builder()
+                .productId(request.productId())
+                .quantity(request.quantity())
+                .reservedQuantity(0)
+                .build();
         InventoryItem saved = inventoryRepository.save(item);
         return inventoryMapper.toDto(saved);
     }
@@ -44,6 +48,13 @@ public class InventoryService {
     @Transactional(readOnly = true)
     public InventoryDto getByProductId(Long productId) {
         return inventoryMapper.toDto(findByProductIdOrThrow(productId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryDto> getAllInventory() {
+        return inventoryRepository.findAll().stream()
+                .map(inventoryMapper::toDto)
+                .toList();
     }
 
     @Transactional

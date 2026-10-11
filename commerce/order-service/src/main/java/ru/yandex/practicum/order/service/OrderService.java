@@ -60,6 +60,13 @@ public class OrderService {
     }
 
     @Transactional(readOnly = true)
+    public List<OrderDto> getAllOrders() {
+        return orderRepository.findAll().stream()
+                .map(orderMapper::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<OrderDto> getOrdersByEmail(String email) {
         return orderRepository.findByCustomerEmail(email).stream()
                 .map(orderMapper::toDto)

@@ -17,6 +17,8 @@ import ru.yandex.practicum.inventory.dto.ReserveResponse;
 import ru.yandex.practicum.inventory.dto.UpdateInventoryRequest;
 import ru.yandex.practicum.inventory.service.InventoryService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/inventory")
 @RequiredArgsConstructor
@@ -33,6 +35,11 @@ public class InventoryController {
     @PutMapping
     public InventoryDto updateInventory(@Valid @RequestBody UpdateInventoryRequest request) {
         return inventoryService.updateInventory(request);
+    }
+
+    @GetMapping
+    public List<InventoryDto> getAllInventory() {
+        return inventoryService.getAllInventory();
     }
 
     @GetMapping("/{productId}")
