@@ -3,12 +3,18 @@ package ru.yandex.practicum.order;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import ru.yandex.practicum.order.client.InventoryClient;
+import ru.yandex.practicum.order.client.ProductClient;
+import ru.yandex.practicum.order.client.dto.ProductResponse;
+import ru.yandex.practicum.order.client.dto.StockOperationResponse;
 import ru.yandex.practicum.order.dto.CreateOrderRequest;
 import ru.yandex.practicum.order.dto.OrderItemRequest;
 
@@ -17,9 +23,16 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+/**
+ * order-service теперь не принимает товарные данные от клиента на веру: название
+ * и цену он получает сам через ProductClient, а остатки резервирует через
+ * InventoryClient. В тесте оба Feign-клиента замоканы (реальные product-service
+ * и inventory-service не поднимаются), чтобы проверить только сценарий order-service.
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @SuppressWarnings("unchecked")
@@ -31,14 +44,27 @@ class OrderServiceAcceptanceTest {
     @Autowired
     private ObjectMapper json;
 
+    @MockBean
+    private ProductClient productClient;
+
+    @MockBean
+    private InventoryClient inventoryClient;
+
     @Test
-    void shouldCreateOrderStoreProductSnapshotAndFindOrderByIdAndEmail() throws Exception {
+    void shouldCreateOrderViaFeignStoreProductSnapshotAndFindOrderByIdAndEmail() throws Exception {
+        Mockito.when(productClient.getProductById(1L))
+                .thenReturn(new ProductResponse(1L, "Acceptance Smart Lamp", new BigDecimal("3490.00"), true));
+        Mockito.when(productClient.getProductById(2L))
+                .thenReturn(new ProductResponse(2L, "Acceptance Smart Plug", new BigDecimal("1290.00"), true));
+        Mockito.when(inventoryClient.reserve(any()))
+                .thenReturn(new StockOperationResponse(true, 0, "Резервирование выполнено успешно"));
+
         CreateOrderRequest request = new CreateOrderRequest(
                 "Acceptance Buyer",
                 "acceptance-buyer@example.com",
                 List.of(
-                        new OrderItemRequest(1L, "Acceptance Smart Lamp", 2, new BigDecimal("3490.00")),
-                        new OrderItemRequest(2L, "Acceptance Smart Plug", 1, new BigDecimal("1290.00"))
+                        new OrderItemRequest(1L, 2),
+                        new OrderItemRequest(2L, 1)
                 )
         );
 
@@ -53,16 +79,15 @@ class OrderServiceAcceptanceTest {
                 .as("Созданный заказ должен содержать поле id")
                 .isNotNull();
         assertThat(created.get("status"))
-                .as("На текущем этапе новый заказ должен сохраняться в статусе CREATED")
-                .isEqualTo("CREATED");
+                .as("После успешного резервирования заказ должен сохраняться в статусе CONFIRMED")
+                .isEqualTo("CONFIRMED");
         assertThat(asDecimal(created.get("totalPrice")))
-                .as("order-service должен сам рассчитывать totalPrice по снимку товаров из запроса")
+                .as("order-service должен сам рассчитывать totalPrice по данным из product-service")
                 .isEqualByComparingTo("8270.00");
         assertThat((List<?>) created.get("items"))
-                .as("Заказ должен хранить позиции заказа")
+                .as("Заказ должен хранить снимок товарных данных, полученных через ProductClient")
                 .hasSize(2)
                 .anySatisfy(item -> assertThat((Map<String, Object>) item)
-                        .as("Позиция заказа должна хранить снимок названия и цены товара из запроса")
                         .containsEntry("productName", "Acceptance Smart Lamp"));
 
         MvcResult byIdResponse = mvc.perform(get("/api/orders/{id}", orderId)).andReturn();
