@@ -17,6 +17,11 @@ spring:
     openfeign:
       circuitbreaker:
         enabled: true
+    loadbalancer:
+      retry:
+        enabled: true
+        max-retries-on-same-service-instance: 0
+        max-retries-on-next-service-instance: 1
 
 feign:
   client:
