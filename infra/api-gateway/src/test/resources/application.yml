@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    config:
+      enabled: false
+    gateway:
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowed-origins:
+              - http://localhost:3000
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowed-headers:
+              - '*'
+            allow-credentials: true
+            max-age: 3600
+      routes:
+        - id: test-products
+          uri: forward:/test-backend
+          predicates:
+            - Path=/api/products/**
+        - id: test-categories
+          uri: forward:/test-backend
+          predicates:
+            - Path=/api/categories/**
+        - id: test-inventory
+          uri: forward:/test-backend
+          predicates:
+            - Path=/api/inventory/**
+        - id: test-orders
+          uri: forward:/test-backend
+          predicates:
+            - Path=/api/orders/**
+
+gateway:
+  security:
+    users:
+      - username: ivan
+        password: "$2b$10$MBMNaMIw0iCruPv1d8GcZOp.5arjQeUIpvZN8LYgqzv1gY/.CsgiW"
+        roles:
+          - USER
+      - username: anna
+        password: "$2b$10$9ZXbZv7Mm3H/15R9ktm0jOkcOPa1v5CPVzFsrtlSvWKpmmoSCWnkO"
+        roles:
+          - USER
+          - ADMIN
