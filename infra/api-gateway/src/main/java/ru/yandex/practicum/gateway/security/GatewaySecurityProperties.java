@@ -21,6 +21,7 @@ public class GatewaySecurityProperties {
     public static class GatewayUser {
 
         private String username;
+        // BCrypt-хеш пароля
         private String password;
         private List<String> roles = new ArrayList<>();
 

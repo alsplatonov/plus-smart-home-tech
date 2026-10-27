@@ -88,11 +88,13 @@ public class GatewaySecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+
+     // В gateway.security.users пароли хранятся уже как готовые BCrypt-хеши
     @Bean
-    public MapReactiveUserDetailsService userDetailsService(PasswordEncoder passwordEncoder) {
+    public MapReactiveUserDetailsService userDetailsService() {
         List<UserDetails> users = securityProperties.getUsers().stream()
                 .map(user -> User.withUsername(user.getUsername())
-                        .password(passwordEncoder.encode(user.getPassword()))
+                        .password(user.getPassword())
                         .roles(user.getRoles().toArray(new String[0]))
                         .build())
                 .toList();

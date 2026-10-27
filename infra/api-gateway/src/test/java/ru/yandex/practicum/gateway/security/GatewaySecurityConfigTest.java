@@ -15,6 +15,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.web.reactive.function.server.RequestPredicates.path;
 import static org.springframework.web.reactive.function.server.RouterFunctions.route;
 
@@ -87,6 +88,53 @@ class GatewaySecurityConfigTest {
     }
 
     @Test
+    void productWrite_withoutCredentials_isUnauthorized() {
+        webTestClient.patch().uri("/api/products/1")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void categoryWrite_withUserCredentials_isForbidden() {
+        webTestClient.patch().uri("/api/categories/1")
+                .header(HttpHeaders.AUTHORIZATION, basic("ivan", "ivan"))
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void categoryWrite_withAdminCredentials_passesSecurity() {
+        webTestClient.patch().uri("/api/categories/1")
+                .header(HttpHeaders.AUTHORIZATION, basic("anna", "anna"))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void inventoryWrite_withUserCredentials_isForbidden() {
+        webTestClient.patch().uri("/api/inventory/1")
+                .header(HttpHeaders.AUTHORIZATION, basic("ivan", "ivan"))
+                .exchange()
+                .expectStatus().isForbidden();
+    }
+
+    @Test
+    void inventoryWrite_withAdminCredentials_passesSecurity() {
+        webTestClient.patch().uri("/api/inventory/1")
+                .header(HttpHeaders.AUTHORIZATION, basic("anna", "anna"))
+                .exchange()
+                .expectStatus().isOk();
+    }
+
+    @Test
+    void login_withWrongPassword_isUnauthorized() {
+        webTestClient.get().uri("/api/orders")
+                .header(HttpHeaders.AUTHORIZATION, basic("ivan", "wrong-password"))
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
     void unknownRoute_withAdminCredentials_isForbidden() {
         webTestClient.get().uri("/api/unknown-secret")
                 .header(HttpHeaders.AUTHORIZATION, basic("anna", "anna"))
@@ -99,8 +147,14 @@ class GatewaySecurityConfigTest {
         webTestClient.options().uri("/api/orders")
                 .header(HttpHeaders.ORIGIN, "http://localhost:3000")
                 .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization")
                 .exchange()
-                .expectStatus().isOk();
+                .expectStatus().isOk()
+                .expectHeader().valueEquals("Access-Control-Allow-Origin", "http://localhost:3000")
+                // Spring CORS отдаёт в preflight-ответе весь настроенный список allowed-methods,
+                // а не только запрошенный метод, поэтому проверяем наличие POST в списке
+                .expectHeader().value("Access-Control-Allow-Methods", methods -> assertThat(methods).contains("POST"))
+                .expectHeader().valueEquals("Access-Control-Allow-Headers", "authorization");
     }
 
     private String basic(String username, String password) {
